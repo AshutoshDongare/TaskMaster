@@ -1,0 +1,52 @@
+# Backend dependencies for the Autonomous Agent System
+# Core Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# LLM
+google-generativeai>=0.8.0
+
+# Browser Automation
+playwright>=1.40.0
+browser-use>=0.1.0
+langchain-google-genai>=1.0.0
+
+# Database
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+
+# Redis
+redis>=5.0.0
+
+# Vector Store
+chromadb>=0.4.22
+
+# Task Queue
+celery[redis]>=5.3.0
+
+# Credential Encryption
+cryptography>=41.0.0
+
+# Document Processing (Phase 2)
+PyMuPDF>=1.23.0
+pandas>=2.1.0
+openpyxl>=3.1.0
+
+# Observability (Phase 4)
+langfuse>=2.0.0
+
+# HTTP client (for Slack notifications etc.)
+httpx>=0.25.0
+
+# Web Search (Phase 3)
+tavily-python>=0.3.0
+
+# Gmail (Phase 3)
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.100.0
+
+# Utilities
+python-multipart>=0.0.6
+websockets>=12.0

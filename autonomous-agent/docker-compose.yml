@@ -1,0 +1,95 @@
+version: '3.9'
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       agentdb
+      POSTGRES_USER:     agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes:
+      - redis_data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports: ["8001:8000"]
+    volumes: [chroma_data:/chroma/chroma]
+    environment:
+      - IS_PERSISTENT=TRUE
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    environment:
+      DATABASE_URL:    postgresql://agent:${POSTGRES_PASSWORD}@postgres:5432/agentdb
+      NEXTAUTH_SECRET: ${LANGFUSE_SECRET}
+      NEXTAUTH_URL:    http://localhost:3000
+    ports: ["3000:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://agent:${POSTGRES_PASSWORD}@postgres:5432/agentdb
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_URL=http://chromadb:8001
+    volumes:
+      - ./backend:/app
+      - ./downloads:/app/downloads
+      - ./screenshots:/app/screenshots
+      - ./vault:/app/vault
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      chromadb:
+        condition: service_started
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery_worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://agent:${POSTGRES_PASSWORD}@postgres:5432/agentdb
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_URL=http://chromadb:8001
+    volumes:
+      - ./backend:/app
+      - ./downloads:/app/downloads
+      - ./screenshots:/app/screenshots
+      - ./vault:/app/vault
+    depends_on: [postgres, redis]
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
+
+  chainlit_ui:
+    build: ./frontend
+    environment:
+      - BACKEND_URL=http://backend:8000
+    ports: ["8080:8080"]
+    depends_on: [backend]
+    command: chainlit run chainlit_app.py --host 0.0.0.0 --port 8080
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
