@@ -51,13 +51,19 @@ RISK LEVEL (set to highest risk of any required action):
 
 AMBIGUITIES — list any question that MUST be answered before starting:
   - "Which account on [site]? You have multiple."
-  - "No credentials stored for [site] — please add them first."
+  - "No credentials stored for [site] — please add them first." ← ONLY for sites that REQUIRE login
   - "Renewal price is unknown — should I proceed if it exceeds $X?"
   - "Which mutual fund portal specifically? You mentioned three."
 
-CRITICAL RULE: If ambiguities exist that would prevent safe execution of a HIGH risk
-task, populate the ambiguities list and leave sub_tasks empty. Return for clarification.
-Do NOT make assumptions on irreversible actions.
+CRITICAL RULES:
+1. NEVER flag missing credentials for public websites that don't require login
+   (e.g. google.com, whatismyipaddress.com, wikipedia.org, any info/lookup site).
+   Credential ambiguities are ONLY valid for sites where the task explicitly requires
+   signing in (e.g. bank portals, email accounts, SaaS dashboards).
+2. If a task is purely read-only or informational (risk_level: low), do NOT add
+   any credential-related ambiguities.
+3. Only block on ambiguities for HIGH risk irreversible actions (payments, form submissions,
+   sending emails). Low/medium risk tasks should proceed with reasonable assumptions.
 
 OUTPUT JSON SCHEMA:
 {
@@ -193,8 +199,24 @@ class IntakeAgent:
     async def _check_credentials(self, manifest: TaskManifest):
         """
         Cross-reference extracted URLs/sites against stored credentials.
-        Add ambiguities for any required but missing credentials.
+        Only flag missing credentials for tasks that REQUIRE login (browse_and_act,
+        download_document) with medium or high risk. Public/read-only tasks never
+        need credentials.
         """
+        # Only check credentials when the task actually requires logging into a site
+        LOGIN_REQUIRED_INTENTS = {TaskIntent.BROWSE_AND_ACT, TaskIntent.DOWNLOAD_DOCUMENT}
+        if manifest.intent not in LOGIN_REQUIRED_INTENTS:
+            logger.debug(
+                f"Skipping credential check for intent '{manifest.intent.value}' "
+                f"— login not required for this intent."
+            )
+            return
+
+        # Low-risk tasks are read-only — no login needed
+        if manifest.risk_level == RiskLevel.LOW:
+            logger.debug("Skipping credential check for low-risk (read-only) task.")
+            return
+
         urls = manifest.entities.get("urls", [])
         accounts = manifest.entities.get("accounts", [])
 

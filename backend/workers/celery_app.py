@@ -6,6 +6,13 @@ and parallel sub-agent spawning.
 """
 
 import os
+import sys
+
+# Ensure /app is on the path so forked Celery workers can import agents/core/etc.
+_app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
+
 from celery import Celery
 from dotenv import load_dotenv
 

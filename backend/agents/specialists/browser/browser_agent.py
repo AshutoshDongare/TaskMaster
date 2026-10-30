@@ -250,8 +250,9 @@ class BrowserSpecialist:
 
                     if action_type == "navigate":
                         url = action.get("url", "")
-                        await page.goto(url, wait_until="networkidle",
+                        await page.goto(url, wait_until="domcontentloaded",
                                         timeout=30000)
+                        await page.wait_for_timeout(2000)  # let JS settle
                         logger.info(f"Navigated to: {url}")
 
                     elif action_type == "screenshot":

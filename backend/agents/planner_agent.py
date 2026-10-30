@@ -36,30 +36,49 @@ For each sub-task, define:
 - risk_level: low | medium | high
 - success_criteria: exact description of what verified completion looks like
 
+SPECIALIST TEAM ROUTING (critical — choose exactly right):
+- research: Use for READ-ONLY tasks that visit URLs and extract/summarise info.
+  Examples: "go to X and tell me Y", "check what is my IP", "look up X on site Y",
+  "read page and report", any informational/lookup task on a public website.
+  The research agent has a full Playwright browser — do NOT send these to browser team.
+- browser: Use ONLY when the task requires INTERACTIVE actions: login, click buttons,
+  fill forms, make payments, submit forms, interact with a logged-in portal.
+  Do NOT use browser for simple page visits and reads.
+- document: Use for downloading, parsing, or processing documents/PDFs.
+- email: Use for reading inbox, drafting, or sending emails.
+  ONLY use email team if the user explicitly said "send an email" or "reply to email".
+  Do NOT use email team to "present results" or "report findings" — that is handled
+  automatically by the output agent.
+
 CRITICAL RULES:
 1. HIGH risk actions (payments, email sends, form submissions) MUST be their own
    sub-task. Never combine a HIGH risk action with a LOW risk one.
 2. Login is always its own sub-task. Never combine login with post-login actions.
 3. Mark sub-tasks that can run in PARALLEL (no shared dependencies).
 4. Each sub-task should be atomic — completable in one specialist session.
-5. Always include a final "output" sub-task to deliver results.
-6. For payment flows: create a sub-task that STOPS at the confirmation page
+5. NEVER add a "present results", "report findings", or "communicate answer" sub-task
+   unless the user specifically asked to send/draft an email. The output agent
+   automatically formats and delivers the final result — you do NOT need to add
+   a sub-task for that.
+6. For simple lookup/research tasks (e.g. "go to X and tell me Y"), ONE single
+   research sub-task is sufficient. Do not over-decompose.
+7. For payment flows: create a sub-task that STOPS at the confirmation page
    (before clicking pay), and a separate sub-task that completes payment AFTER approval.
 
 OUTPUT: JSON array of sub-tasks matching this schema:
 [
   {
     "id": "st-01",
-    "description": "Login to namecheap.com using stored credentials",
-    "specialist_team": "browser",
-    "tools_required": ["navigate", "type", "click", "screenshot"],
+    "description": "Visit https://whatismyipaddress.com/ and extract the displayed IP address",
+    "specialist_team": "research",
+    "tools_required": ["navigate", "extract_text"],
     "depends_on": [],
     "risk_level": "low",
-    "success_criteria": "Dashboard or account page is visible after login"
-  },
-  ...
+    "success_criteria": "IP address is extracted and returned as text"
+  }
 ]
 """
+
 
 
 class PlannerAgent:

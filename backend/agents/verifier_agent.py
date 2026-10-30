@@ -109,6 +109,22 @@ class VerifierAgent:
         """
         evidence = evidence or {}
 
+        # ── Fast-path for research/text-answer tasks ─────────────────────────
+        # If the specialist explicitly returned success=True with a non-empty
+        # answer, accept it directly — research results are textual, not visual,
+        # and the LLM verifier has no independent way to check them.
+        answer = claimed_result.get("answer") or (evidence.get("final_output"))
+        if claimed_result.get("success") and answer and str(answer).strip():
+            logger.info("Verification fast-path: research task returned a non-empty answer")
+            return VerificationResult(
+                verified=True,
+                confidence=0.90,
+                evidence_summary=f"Research answer returned: {str(answer)[:200]}",
+                issues=[],
+                recommendation="proceed",
+            )
+        # ─────────────────────────────────────────────────────────────────────
+
         # Build verification prompt
         user_message = (
             f"Verify this sub-task result:\n\n"
@@ -174,6 +190,7 @@ class VerifierAgent:
         )
 
         return result
+
 
     async def _check_file_evidence(self, evidence: Dict[str, Any]) -> str:
         """

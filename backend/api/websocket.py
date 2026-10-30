@@ -69,13 +69,61 @@ async def websocket_task_events(websocket: WebSocket, task_id: str):
 
     Subscribes to Redis pub/sub channel for the task and forwards
     all events to the connected client.
+
+    On connect, immediately checks DB state so fast-completing tasks
+    are never silently dropped due to the pub/sub race condition.
     """
     await manager.connect(websocket, task_id)
 
     try:
-        # Get Redis from app state
+        # Get Redis + DB from app state
         state = websocket.app.state.app_state
         redis_client = state.redis.client
+        db = state.db  # PostgresStore
+
+        # ── Race-condition guard ─────────────────────────────────────
+        # If the task already reached a terminal state before the WS
+        # was established, the Redis pub/sub event fired into the void.
+        # Replay it now so the UI never hangs.
+        try:
+            task_data = await db.get_task(task_id)
+            if task_data:
+                status = task_data.get("status", "")
+                if status == "completed":
+                    import json as _json
+                    result = task_data.get("result", {})
+                    if isinstance(result, str):
+                        try:
+                            result = _json.loads(result)
+                        except Exception:
+                            result = {"report_markdown": result}
+                    await websocket.send_json({
+                        "type": "task_completed",
+                        "data": {"result": result},
+                    })
+                    return
+                elif status == "failed":
+                    import json as _json
+                    result = task_data.get("result", {})
+                    if isinstance(result, str):
+                        try:
+                            result = _json.loads(result)
+                        except Exception:
+                            result = {}
+                    await websocket.send_json({
+                        "type": "task_failed",
+                        "data": {"error": result.get("error", "Task failed")},
+                    })
+                    return
+                elif status == "cancelled":
+                    await websocket.send_json({
+                        "type": "task_failed",
+                        "data": {"error": "Task was cancelled"},
+                    })
+                    return
+        except Exception as e:
+            logger.warning(f"Could not pre-check task state on WS connect: {e}")
+        # ────────────────────────────────────────────────────────────
 
         # Subscribe to task events channel
         pubsub = redis_client.pubsub()
@@ -113,3 +161,4 @@ async def websocket_task_events(websocket: WebSocket, task_id: str):
         logger.error(f"WebSocket error for task {task_id}: {e}")
     finally:
         manager.disconnect(websocket, task_id)
+

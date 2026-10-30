@@ -13,6 +13,12 @@ import json
 import asyncio
 import logging
 from datetime import datetime
+from pathlib import Path
+
+# Load .env from project root (two levels up from frontend/)
+from dotenv import load_dotenv
+_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(_env_path, override=False)  # won't override vars already set by Docker
 
 import chainlit as cl
 import httpx
@@ -20,6 +26,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+logger.info(f"🔗 Chainlit UI connecting to backend: {BACKEND_URL}")
 
 
 @cl.on_chat_start
@@ -75,9 +82,22 @@ async def on_message(message: cl.Message):
                 f"{BACKEND_URL}/tasks",
                 json={"description": user_input},
             )
-            response.raise_for_status()
-            result = response.json()
 
+        # Surface non-2xx responses with body detail
+        if response.status_code >= 400:
+            try:
+                err_body = response.json()
+            except Exception:
+                err_body = response.text
+            await cl.Message(
+                content=(
+                    f"❌ **Backend error {response.status_code}**\n\n"
+                    f"```\n{err_body}\n```"
+                ),
+            ).send()
+            return
+
+        result = response.json()
         task_id = result.get("task_id")
         status = result.get("status")
         ambiguities = result.get("ambiguities", [])
@@ -107,17 +127,31 @@ async def on_message(message: cl.Message):
             # Start monitoring task progress
             asyncio.create_task(monitor_task(task_id))
 
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
+        logger.error(f"ConnectError to {BACKEND_URL}: {e}")
         await cl.Message(
             content=(
-                "❌ **Cannot connect to backend**\n\n"
-                f"Make sure the backend is running at `{BACKEND_URL}`.\n"
+                f"❌ **Cannot connect to backend at `{BACKEND_URL}`**\n\n"
+                "Make sure the backend is running.\n"
                 "Start it with: `uvicorn main:app --reload`"
             ),
         ).send()
-    except Exception as e:
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout posting task: {e}")
         await cl.Message(
-            content=f"❌ **Error submitting task:** {str(e)}"
+            content=(
+                "❌ **Request timed out** — the backend took too long to respond.\n\n"
+                f"Backend URL: `{BACKEND_URL}`"
+            ),
+        ).send()
+    except Exception as e:
+        logger.exception(f"Unexpected error submitting task: {e}")
+        await cl.Message(
+            content=(
+                f"❌ **Unexpected error submitting task**\n\n"
+                f"```\n{type(e).__name__}: {e}\n```\n\n"
+                f"Backend URL: `{BACKEND_URL}`"
+            )
         ).send()
 
 

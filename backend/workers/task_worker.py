@@ -106,14 +106,24 @@ async def _execute_task(task_id: str):
 
         # Reconstruct TaskManifest
         from core.task_manifest import TaskIntent, RiskLevel
+
+        def _parse_json_field(value, default):
+            """Parse a field that may be stored as a JSON string in the DB."""
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    return default
+            return value if value is not None else default
+
         manifest = TaskManifest(
             id=str(task_data["id"]),
             raw_input=task_data["raw_input"],
             intent=TaskIntent(task_data.get("intent", "generic")),
             risk_level=RiskLevel(task_data.get("risk_level", "medium")),
-            entities=task_data.get("entities", {}),
-            constraints=task_data.get("constraints", []),
-            ambiguities=task_data.get("ambiguities", []),
+            entities=_parse_json_field(task_data.get("entities"), {}),
+            constraints=_parse_json_field(task_data.get("constraints"), []),
+            ambiguities=_parse_json_field(task_data.get("ambiguities"), []),
             status=TaskStatus(task_data.get("status", "pending")),
         )
 

@@ -38,11 +38,44 @@ class PostgresStore:
 
     async def connect(self):
         """Create connection pool."""
-        self._pool = await asyncpg.create_pool(
-            self.database_url,
-            min_size=2,
-            max_size=10,
-        )
+        try:
+            # Parse database_url robustly to handle passwords with '@'
+            dsn = self.database_url
+            if dsn.startswith("postgresql://"):
+                dsn = dsn[len("postgresql://"):]
+            elif dsn.startswith("postgres://"):
+                dsn = dsn[len("postgres://"):]
+                
+            # Split on the last '@' to separate host from credentials
+            creds, host_part = dsn.rsplit("@", 1)
+            user, password = creds.split(":", 1)
+            
+            # Split host and database
+            host_port, database = host_part.split("/", 1)
+            if ":" in host_port:
+                host, port = host_port.split(":", 1)
+                port = int(port)
+            else:
+                host = host_port
+                port = 5432
+                
+            self._pool = await asyncpg.create_pool(
+                user=user,
+                password=password,
+                host=host,
+                port=port,
+                database=database,
+                min_size=2,
+                max_size=10,
+            )
+        except Exception as e:
+            logger.warning(f"Robust parsing failed or not applicable, trying direct connect: {e}")
+            # Fallback to direct DSN string
+            self._pool = await asyncpg.create_pool(
+                self.database_url,
+                min_size=2,
+                max_size=10,
+            )
         logger.info("PostgreSQL connection pool created")
 
     async def disconnect(self):
